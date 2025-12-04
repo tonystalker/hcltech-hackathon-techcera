@@ -16,9 +16,6 @@ class UserCreate(UserBase):
 class UserResponse(UserBase):
     id: str
 
-    class Config:
-        allow_population_by_field_name = True
-
 
 class UserUpdate(BaseModel):
     name: Optional[str] = None
@@ -51,9 +48,6 @@ class GoalResponse(BaseModel):
     steps: int
     sleep_time: float
     water_glasses: int
-
-    class Config:
-        allow_population_by_field_name = True
 
 
 class PatientStatusResponse(BaseModel):
