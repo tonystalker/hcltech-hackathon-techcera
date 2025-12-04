@@ -27,7 +27,7 @@ A healthcare portal where:
 *Frontend:* React + Tailwind CSS  
 *Backend:* Python + FastAPI  
 *Database:* MongoDB Atlas  
-*Auth:* JWT + Bcrypt  
+*Auth:* JWT
 *Hosting:* Vercel (frontend) + Render (backend)
 
 ---
