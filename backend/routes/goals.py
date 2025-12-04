@@ -1,9 +1,8 @@
 from datetime import date, datetime, timedelta, timezone
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, status
 from database.database import get_database
 from models.models import GoalCreate, GoalResponse
-from dependencies import get_current_patient
 
 router = APIRouter(prefix="/goals", tags=["goals"])
 
@@ -19,21 +18,16 @@ def format_goal(goal_dict: dict) -> GoalResponse:
     )
 
 
-@router.post("", response_model=GoalResponse, status_code=status.HTTP_201_CREATED)
-async def add_goal(goal_data: GoalCreate, current_user: dict = Depends(get_current_patient)):
+@router.post("/{patient_id}", response_model=GoalResponse, status_code=status.HTTP_201_CREATED)
+async def add_goal(patient_id: str, goal_data: GoalCreate):
     db = get_database()
     goals_collection = db["goals"]
-
-    user_id = str(current_user["_id"])
     today = date.today()
 
-    existing_goal = await goals_collection.find_one({
-        "patient_id": user_id,
-        "date": today
-    })
+    existing_goal = await goals_collection.find_one({"patient_id": patient_id, "date": today})
 
     goal_dict = {
-        "patient_id": user_id,
+        "patient_id": patient_id,
         "date": today,
         "steps": goal_data.steps,
         "sleep_time": goal_data.sleep_time,
@@ -44,12 +38,7 @@ async def add_goal(goal_data: GoalCreate, current_user: dict = Depends(get_curre
     if existing_goal:
         await goals_collection.update_one(
             {"_id": existing_goal["_id"]},
-            {"$set": {
-                "steps": goal_data.steps,
-                "sleep_time": goal_data.sleep_time,
-                "water_glasses": goal_data.water_glasses,
-                "updated_at": datetime.now(timezone.utc)
-            }}
+            {"$set": {"steps": goal_data.steps, "sleep_time": goal_data.sleep_time, "water_glasses": goal_data.water_glasses, "updated_at": datetime.now(timezone.utc)}}
         )
         goal_dict["_id"] = existing_goal["_id"]
     else:
@@ -59,37 +48,17 @@ async def add_goal(goal_data: GoalCreate, current_user: dict = Depends(get_curre
     return format_goal(goal_dict)
 
 
-@router.get("/today", response_model=Optional[GoalResponse])
-async def get_today_goal(current_user: dict = Depends(get_current_patient)):
+@router.get("/{patient_id}/today", response_model=Optional[GoalResponse])
+async def get_today_goal(patient_id: str):
     db = get_database()
-    goals_collection = db["goals"]
-
-    user_id = str(current_user["_id"])
-    today = date.today()
-
-    goal = await goals_collection.find_one({
-        "patient_id": user_id,
-        "date": today
-    })
-
-    if not goal:
-        return None
-
-    return format_goal(goal)
+    goal = await db["goals"].find_one({"patient_id": patient_id, "date": date.today()})
+    return format_goal(goal) if goal else None
 
 
-@router.get("/history", response_model=List[GoalResponse])
-async def get_goal_history(current_user: dict = Depends(get_current_patient)):
+@router.get("/{patient_id}/history", response_model=List[GoalResponse])
+async def get_goal_history(patient_id: str):
     db = get_database()
-    goals_collection = db["goals"]
-
-    user_id = str(current_user["_id"])
     week_ago = date.today() - timedelta(days=7)
-
-    cursor = goals_collection.find({
-        "patient_id": user_id,
-        "date": {"$gte": week_ago}
-    }).sort("date", -1)
-
+    cursor = db["goals"].find({"patient_id": patient_id, "date": {"$gte": week_ago}}).sort("date", -1)
     goals = await cursor.to_list(length=None)
     return [format_goal(goal) for goal in goals]

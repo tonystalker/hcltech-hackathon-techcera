@@ -1,11 +1,10 @@
 from datetime import date, timedelta
-from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from typing import List
+from fastapi import APIRouter, HTTPException, status
 from bson import ObjectId
 from bson.errors import InvalidId
 from database.database import get_database
 from models.models import UserResponse, GoalResponse, PatientListItem, PatientStatusResponse
-from dependencies import get_current_provider
 
 router = APIRouter(prefix="/provider", tags=["provider"])
 
@@ -22,158 +21,63 @@ def format_goal(goal_dict: dict) -> GoalResponse:
 
 
 @router.get("/patients", response_model=List[PatientListItem])
-async def get_my_patients(current_user: dict = Depends(get_current_provider)):
+async def get_all_patients():
     db = get_database()
-    patient_providers_collection = db["patient_providers"]
-    users_collection = db["users"]
-    goals_collection = db["goals"]
-
-    provider_id = str(current_user["_id"])
-
-    assignments = await patient_providers_collection.find(
-        {"provider_id": provider_id}
-    ).to_list(length=None)
-
-    patients_list = []
+    patients = await db["users"].find({"role": "patient"}).to_list(length=None)
     today = date.today()
-
-    for assignment in assignments:
-        patient_id = assignment["patient_id"]
-
-        try:
-            try:
-                patient = await users_collection.find_one({"_id": ObjectId(patient_id)})
-            except InvalidId:
-                patient = None
-
-            if not patient or patient.get("role") != "patient":
-                continue
-
-            today_goal = await goals_collection.find_one({
-                "patient_id": str(patient["_id"]),
-                "date": today
-            })
-
-            patient_item = PatientListItem(
-                id=str(patient["_id"]),
-                name=patient["name"],
-                email=patient["email"],
-                today_goal=format_goal(today_goal) if today_goal else None
-            )
-            patients_list.append(patient_item)
-        except Exception:
-            continue
-
-    return patients_list
+    
+    result = []
+    for p in patients:
+        today_goal = await db["goals"].find_one({"patient_id": str(p["_id"]), "date": today})
+        result.append(PatientListItem(
+            id=str(p["_id"]),
+            name=p["name"],
+            email=p["email"],
+            today_goal=format_goal(today_goal) if today_goal else None
+        ))
+    return result
 
 
 @router.get("/patient/{patient_id}/goals", response_model=List[GoalResponse])
-async def get_patient_goals(
-    patient_id: str,
-    current_user: dict = Depends(get_current_provider)
-):
+async def get_patient_goals(patient_id: str):
     db = get_database()
-    patient_providers_collection = db["patient_providers"]
-    users_collection = db["users"]
-    goals_collection = db["goals"]
-
-    provider_id = str(current_user["_id"])
-
-    assignment = await patient_providers_collection.find_one({
-        "provider_id": provider_id,
-        "patient_id": patient_id
-    })
-
-    if not assignment:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Patient not found or not assigned to you"
-        )
-
+    
     try:
-        patient = await users_collection.find_one({"_id": ObjectId(patient_id)})
-        if not patient or patient.get("role") != "patient":
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Patient not found"
-            )
+        patient = await db["users"].find_one({"_id": ObjectId(patient_id)})
+        if not patient:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Patient not found")
     except InvalidId:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Invalid patient ID"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invalid patient ID")
 
     week_ago = date.today() - timedelta(days=7)
-    cursor = goals_collection.find({
-        "patient_id": patient_id,
-        "date": {"$gte": week_ago}
-    }).sort("date", -1)
-
-    goals = await cursor.to_list(length=None)
-    return [format_goal(goal) for goal in goals]
+    goals = await db["goals"].find({"patient_id": patient_id, "date": {"$gte": week_ago}}).sort("date", -1).to_list(length=None)
+    return [format_goal(g) for g in goals]
 
 
 @router.get("/patient/{patient_id}/status", response_model=PatientStatusResponse)
-async def get_patient_status(
-    patient_id: str,
-    current_user: dict = Depends(get_current_provider)
-):
+async def get_patient_status(patient_id: str):
     db = get_database()
-    patient_providers_collection = db["patient_providers"]
-    users_collection = db["users"]
-    goals_collection = db["goals"]
-
-    provider_id = str(current_user["_id"])
-
-    assignment = await patient_providers_collection.find_one({
-        "provider_id": provider_id,
-        "patient_id": patient_id
-    })
-
-    if not assignment:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Patient not found or not assigned to you"
-        )
-
+    
     try:
-        patient = await users_collection.find_one({"_id": ObjectId(patient_id)})
-        if not patient or patient.get("role") != "patient":
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Patient not found"
-            )
+        patient = await db["users"].find_one({"_id": ObjectId(patient_id)})
+        if not patient:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Patient not found")
     except InvalidId:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Invalid patient ID"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invalid patient ID")
 
     today = date.today()
-    today_goal = await goals_collection.find_one({
-        "patient_id": patient_id,
-        "date": today
-    })
+    today_goal = await db["goals"].find_one({"patient_id": patient_id, "date": today})
 
-    week_ago = date.today() - timedelta(days=7)
-    cursor = goals_collection.find({
-        "patient_id": patient_id,
-        "date": {"$gte": week_ago}
-    })
-
-    all_goals = await cursor.to_list(length=None)
-    total_steps = sum(goal.get("steps", 0) for goal in all_goals)
-    total_sleep = sum(goal.get("sleep_time", 0) for goal in all_goals)
-    total_water = sum(goal.get("water_glasses", 0) for goal in all_goals)
+    week_ago = today - timedelta(days=7)
+    all_goals = await db["goals"].find({"patient_id": patient_id, "date": {"$gte": week_ago}}).to_list(length=None)
+    
+    total_steps = sum(g.get("steps", 0) for g in all_goals)
+    total_sleep = sum(g.get("sleep_time", 0) for g in all_goals)
+    total_water = sum(g.get("water_glasses", 0) for g in all_goals)
     avg_sleep = total_sleep / len(all_goals) if all_goals else 0.0
 
     return PatientStatusResponse(
-        patient=UserResponse(
-            id=str(patient["_id"]),
-            name=patient["name"],
-            email=patient["email"],
-            role=patient["role"]
-        ),
+        patient=UserResponse(id=str(patient["_id"]), name=patient["name"], email=patient["email"], role=patient["role"]),
         today_goal=format_goal(today_goal) if today_goal else None,
         total_steps=total_steps,
         avg_sleep_time=round(avg_sleep, 2),
