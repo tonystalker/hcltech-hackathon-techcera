@@ -8,29 +8,35 @@ from dependencies import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_HOURS
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
 
+
 def hash_password(password: str) -> str:
     salt = bcrypt.gensalt()
     return bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
 
+
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
+
 
 def create_access_token(data: dict, expires_delta: timedelta = None) -> str:
     to_encode = data.copy()
     if expires_delta:
         expire = datetime.now(timezone.utc) + expires_delta
     else:
-        expire = datetime.now(timezone.utc) + timedelta(hours=ACCESS_TOKEN_EXPIRE_HOURS)
+        expire = datetime.now(timezone.utc) + \
+            timedelta(hours=ACCESS_TOKEN_EXPIRE_HOURS)
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
+
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def register(user_data: UserCreate):
     db = get_database()
     users_collection = db["users"]
 
-    existing_user = await users_collection.find_one({"email": user_data.email})
+    normalized_email = user_data.email.lower().strip()
+    existing_user = await users_collection.find_one({"email": normalized_email})
     if existing_user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -40,7 +46,7 @@ async def register(user_data: UserCreate):
     hashed_password = hash_password(user_data.password)
     user_dict = {
         "name": user_data.name,
-        "email": user_data.email,
+        "email": normalized_email,
         "role": user_data.role,
         "password": hashed_password
     }
@@ -54,6 +60,7 @@ async def register(user_data: UserCreate):
         email=user_dict["email"],
         role=user_dict["role"]
     )
+
 
 @router.post("/login", response_model=TokenResponse)
 async def login(credentials: LoginRequest):
