@@ -1,15 +1,10 @@
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 from database.database import get_database
-from dependencies import get_current_user
+from dependencies import get_current_user, hash_password
 from models.models import UserUpdate, UserResponse
-import bcrypt
 
 router = APIRouter(prefix="/credentials", tags=["credentials"])
-
-def hash_password(password: str) -> str:
-    salt = bcrypt.gensalt()
-    return bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
 
 @router.put("/modify", response_model=UserResponse)
 async def modify_credentials(
