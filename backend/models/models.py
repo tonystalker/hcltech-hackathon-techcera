@@ -45,3 +45,16 @@ class GoalResponse(BaseModel):
 
     class Config:
         allow_population_by_field_name = True
+
+class PatientStatusResponse(BaseModel):
+    patient: UserResponse
+    today_goal: Optional[GoalResponse] = None
+    total_steps: int = 0
+    avg_sleep_time: float = 0.0
+    total_water_glasses: int = 0
+
+class PatientListItem(BaseModel):
+    id: str
+    name: str
+    email: str
+    today_goal: Optional[GoalResponse] = None

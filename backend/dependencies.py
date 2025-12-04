@@ -37,3 +37,11 @@ async def get_current_patient(current_user: dict = Depends(get_current_user)):
             detail="Only patients can perform this action"
         )
     return current_user
+
+async def get_current_provider(current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") != "provider":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only providers can perform this action"
+        )
+    return current_user
