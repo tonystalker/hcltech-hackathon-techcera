@@ -8,6 +8,7 @@ from routes.goals import router as goals_router
 from routes.credentials import router as credentials_router
 from routes.provider import router as provider_router
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await connect_to_mongo()
@@ -35,9 +36,11 @@ app.include_router(goals_router)
 app.include_router(credentials_router)
 app.include_router(provider_router)
 
+
 @app.get("/")
 async def root():
     return {"message": "Healthcare Wellness & Preventive Care Portal API"}
+
 
 @app.get("/health")
 async def health_check():
