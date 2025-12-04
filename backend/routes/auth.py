@@ -1,8 +1,9 @@
 from datetime import datetime, timedelta, timezone
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Depends
+from fastapi.security import OAuth2PasswordRequestForm
 from jose import jwt
 from database.database import get_database
-from models.models import UserCreate, UserResponse, LoginRequest, TokenResponse
+from models.models import UserCreate, UserResponse, TokenResponse
 from dependencies import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_HOURS, hash_password, verify_password
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
@@ -52,29 +53,19 @@ async def register(user_data: UserCreate):
     )
 
 
-@router.post("/login", response_model=TokenResponse)
-async def login(credentials: LoginRequest):
+@router.post("/login")
+async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     db = get_database()
     users_collection = db["users"]
     tokens_collection = db["tokens"]
 
-    if not credentials.email or not credentials.password:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email and password are required"
-        )
-
-    user = await users_collection.find_one({"email": credentials.email.lower().strip()})
-    if not user:
+    email = form_data.username.lower().strip()
+    user = await users_collection.find_one({"email": email})
+    if not user or not verify_password(form_data.password, user["password"]):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password"
-        )
-
-    if not verify_password(credentials.password, user["password"]):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password"
+            detail="Invalid email or password",
+            headers={"WWW-Authenticate": "Bearer"}
         )
 
     user_id = str(user["_id"])
@@ -84,25 +75,20 @@ async def login(credentials: LoginRequest):
         expires_delta=expires_delta
     )
 
-    expires_at = datetime.now(timezone.utc) + expires_delta
-    token_doc = {
+    await tokens_collection.insert_one({
         "user_id": user_id,
         "token": access_token,
         "created_at": datetime.now(timezone.utc),
-        "expires_at": expires_at
+        "expires_at": datetime.now(timezone.utc) + expires_delta
+    })
+
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": {
+            "id": user_id,
+            "name": user["name"],
+            "email": user["email"],
+            "role": user["role"]
+        }
     }
-
-    await tokens_collection.insert_one(token_doc)
-
-    user_response = UserResponse(
-        id=user_id,
-        name=user["name"],
-        email=user["email"],
-        role=user["role"]
-    )
-
-    return TokenResponse(
-        access_token=access_token,
-        token_type="bearer",
-        user=user_response
-    )
