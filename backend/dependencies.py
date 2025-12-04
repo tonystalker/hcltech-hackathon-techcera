@@ -10,6 +10,7 @@ ACCESS_TOKEN_EXPIRE_HOURS = 24
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
 
+
 async def get_current_user(token: str = Depends(oauth2_scheme)):
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -23,12 +24,13 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
             raise credentials_exception
     except JWTError:
         raise credentials_exception
-        
+
     db = get_database()
     user = await db["users"].find_one({"email": email})
     if user is None:
         raise credentials_exception
     return user
+
 
 async def get_current_patient(current_user: dict = Depends(get_current_user)):
     if current_user.get("role") != "patient":
@@ -37,6 +39,7 @@ async def get_current_patient(current_user: dict = Depends(get_current_user)):
             detail="Only patients can perform this action"
         )
     return current_user
+
 
 async def get_current_provider(current_user: dict = Depends(get_current_user)):
     if current_user.get("role") != "provider":
